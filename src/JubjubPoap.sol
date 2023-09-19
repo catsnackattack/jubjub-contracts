@@ -17,13 +17,15 @@ contract JubjubPoap is ERC721, Ownable {
 
     // not needed. handled in semaphore.verifyProof already - https://github.com/semaphore-protocol/semaphore/blob/715b1f8ac56d0c7e33aca96b97cc9c2be5aa47bc/packages/contracts/contracts/Semaphore.sol#L181
     // mapping(bytes32 => bool) public nullifierUsed;
-    uint8 currentEdition;
-    mapping(uint256 => uint256) public edition; // nft -> signature nonce group
-    mapping(uint256 => string) public editionURI; // nonce group -> custom FT
-
+    mapping(uint256 => uint256) public nonces; // nft -> signature nonce #
+    mapping(uint256 => uint8) public editions; // nft -> signature nonce group
+    mapping(uint8 => string) public editionURIs; // edition -> custom NFT art
+    
+    /// @notice nonce group that all NFTs currently minted should be added to
+    uint8 public currentEdition;
     uint96 public nextTokenId;
 
-    /// @notice the public key of the card managing group
+    /// @notice the public key of the card managing this group
     address public signer;
     /// @notice semaphore group id this contract is managing
     address public groupId;
@@ -40,7 +42,7 @@ contract JubjubPoap is ERC721, Ownable {
 
     event SignerSet(address signer);
 
-    constructor(IVerifier semaphore_) {
+    constructor(ISemaphore semaphore_) {
         semaphore = semaphore_;
     }
 
@@ -66,18 +68,19 @@ contract JubjubPoap is ERC721, Ownable {
     }
 
     function tokenURI(uint256 id) public view override returns (string memory) {
-        return string.concat(_defaultTokenURI, id.toString());
-    }
-
-    function setTokenURI(uint256 id, string calldata tokenURI_) onlyOwner() external {
-        tokenUriOverrides[id] = tokenURI_;
+        string memory targetURI = editionURIs[editions[id]];
+        if(bytes(targetURI).length == 0) {
+            return string.concat(_defaultTokenURI, id.toString());
+        } else {
+            return targetURI;
+        }
     }
 
     function nextEdition(string calldata tokenURI_) onlyOwner() external {
         unchecked {
             ++currentEdition;
         }
-        editionURI[currentEdition] = tokenURI_;
+        editionURIs[currentEdition] = tokenURI_;
     }
 
     function mint(bytes32 nullifierHash, address recipient, uint266 idCommitment, bytes memory signature, uint256[8] calldata proof) external {
@@ -93,9 +96,13 @@ contract JubjubPoap is ERC721, Ownable {
             proof
         )) revert VerificationFailed();
 
+
         try(semaphore.addMember(groupId_, idCommitment)) {
             _mint(recipient, nextTokenId);
             edition[nextTokenId] = currentEdition;
+            // TODO get signature nonce from proof
+            // nonce[nextTokenId] = signatureNonce;
+
             unchecked {
                 ++nextTokenId;
             }
@@ -106,8 +113,7 @@ contract JubjubPoap is ERC721, Ownable {
 
     /**
      * functions to delegate more functionality to Semaphore instead of contract specific ACL
-     */
-
+    */
     // function updateAdmin(address newAdmin) internal onlyOwner() {
     //     semaphore.updateGroupAdmin(groupId, newAdmin);
     // }
