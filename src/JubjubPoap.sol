@@ -7,7 +7,7 @@ import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {ISemaphore} from "semaphore/interfaces/ISemaphore.sol";
 
-contract JubjubPoap is ERC721, Ownable {
+contract JubjubPoap is ERC721 {
     using LibBitmap for LibBitmap.Bitmap;
     using LibString for uint256;
 
@@ -25,7 +25,7 @@ contract JubjubPoap is ERC721, Ownable {
     uint8 public currentEdition;
     uint96 public nextTokenId;
 
-    /// @notice the public key of the card managing this group
+    /// @notice 
     address public signer;
     /// @notice semaphore group id this contract is managing
     address public groupId;
@@ -40,23 +40,35 @@ contract JubjubPoap is ERC721, Ownable {
     error NotAdmin();
     error AddMemberFailed();
 
-    event SignerSet(address signer);
-
     constructor(ISemaphore semaphore_) {
         semaphore = semaphore_;
     }
 
-    function intialize(address owner_, uint256 groupId_, string calldata name_, string calldata symbol_, string calldata tokenURI_, address signer_)
+    /**
+     @notice -
+     @param signer_ - the public key of the card managing this group
+     @param groupID_ - semaphore group id for ACL and nullifiers
+     @param name_ - NFT token name
+     @param symbol_ - NFT token symbol
+     @param tokenURI_ - default NFT art to display
+    */
+    function intialize(address signer_, uint256 groupId_, string calldata name_, string calldata symbol_, string calldata tokenURI_)
         external
     {
         if (bytes(_name).length == 0) revert AlreadyInitialized();
         if (bytes(name_).length == 0) revert InvalidNameLength();
-        _initializeOwner(signer_);
         _name = name_;
         _symbol = symbol_;
         _defaultTokenURI = tokenURI_;
+
+        signer = signer_;
         groupId = groupId_;
-        semaphore.createGroup(groupId_, 0 /* TODO: merkleTreeDepth */, signer);
+        semaphore.createGroup(groupId_, 0 /* TODO: merkleTreeDepth */, signer_);
+    }
+
+    modifier onlyOwner() {
+        if (!msg.sender == signer) revert NotAdmin();
+        _;
     }
 
     function name() public view override returns (string memory) {
