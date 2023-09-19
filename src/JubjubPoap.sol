@@ -15,7 +15,7 @@ contract JubjubPoap is ERC721, Ownable {
     string internal _symbol;
     string internal _tokenURI;
 
-    mapping(bytes32 => bool) public nullifierUsed;
+    mapping(uint => bool) public nullifierUsed;
     uint96 public nextTokenId;
     address public signer;
 
@@ -65,12 +65,20 @@ contract JubjubPoap is ERC721, Ownable {
         return string.concat(_tokenURI, id.toString());
     }
 
-    function mint(addres to, uint256 nullifierHash, uint256[8] calldata proof) external {
-        if (nullifierUsed[nullifier]) revert NullifierAlreadyUsed();
+    function mint(address to, uint256 nullifierHash, uint256[8] calldata proof) external {
+        if (nullifierUsed[nullifierHash]) revert NullifierAlreadyUsed();
+        uint nextTokenId_ =  nextTokenId;
         address signer_ = signer;
-        if (!_verify({recipient: to, nullifierHash: nullifierHash, signer_: signer_, proof: proof})) {
+        if (!_verify(to, nullifierHash, signer_, proof)) {
             revert VerificationFailed();
         }
+        nullifierUsed[nullifierHash] = true;
+        unchecked {
+
+        _mint(to, nextTokenId++);
+        }
+        // Overflow of 96-bits leading to truncation infeasible.
+        nextTokenId = uint96(nextTokenId_);
     }
 
     function _setSigner(address newSigner) internal {
@@ -83,6 +91,17 @@ contract JubjubPoap is ERC721, Ownable {
         view
         returns (bool)
     {
-        try verifier.verifyProof(merkleTreeRoot, nullifierHash, uint160(recipient), externalNullifier, proof, merkleTreeDepth);
+        uint256 merkleTreeRoot = 0;
+        assert(merkleTreeRoot != 0); // TODO: Make `merkleTreeRoot` = group([nullifierHash])
+        /// @dev Uses signer pubkey hash (address) as group ID == external nullifier.
+        uint256 externalNullifier = uint256(uint160(signer_));
+        // Signal is solely the recipient to make sure no one else can frontrun
+        uint256 signal = uint256(uint160(recipient));
+
+        try verifier.verifyProof(merkleTreeRoot, nullifierHash, signal, externalNullifier, proof, 1) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 }
