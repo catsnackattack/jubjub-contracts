@@ -17,7 +17,10 @@ contract JubjubPoap is ERC721, Ownable {
 
     // not needed. handled in semaphore.verifyProof already - https://github.com/semaphore-protocol/semaphore/blob/715b1f8ac56d0c7e33aca96b97cc9c2be5aa47bc/packages/contracts/contracts/Semaphore.sol#L181
     // mapping(bytes32 => bool) public nullifierUsed;
-    mapping(uint256 => string) public tokenUriOverrides;
+    uint8 currentEdition;
+    mapping(uint256 => uint256) public edition; // nft -> signature nonce group
+    mapping(uint256 => string) public editionURI; // nonce group -> custom FT
+
     uint96 public nextTokenId;
 
     /// @notice the public key of the card managing group
@@ -70,6 +73,13 @@ contract JubjubPoap is ERC721, Ownable {
         tokenUriOverrides[id] = tokenURI_;
     }
 
+    function nextEdition(string calldata tokenURI_) onlyOwner() external {
+        unchecked {
+            ++currentEdition;
+        }
+        editionURI[currentEdition] = tokenURI_;
+    }
+
     function mint(bytes32 nullifierHash, address recipient, uint266 idCommitment, bytes memory signature, uint256[8] calldata proof) external {
         // address signer_ = signer;
         // if (!semaphore.verify(signer_, nullifierHash, proof)) revert VerificationFailed();
@@ -85,17 +95,17 @@ contract JubjubPoap is ERC721, Ownable {
 
         try(semaphore.addMember(groupId_, idCommitment)) {
             _mint(recipient, nextTokenId);
+            edition[nextTokenId] = currentEdition;
             unchecked {
                 ++nextTokenId;
             }
         } catch(bytes memory) {
             revert AddMemberFailed();
         }
-        
     }
 
     /**
-     * functions to delegate functionality to Semaphore instead of contract specific ACL
+     * functions to delegate more functionality to Semaphore instead of contract specific ACL
      */
 
     // function updateAdmin(address newAdmin) internal onlyOwner() {
