@@ -15,7 +15,7 @@ contract JubjubPoap is ERC721, Ownable {
     string internal _symbol;
     string internal _tokenURI;
 
-    mapping(uint => bool) public nullifierUsed;
+    mapping(uint256 => bool) public nullifierUsed;
     uint96 public nextTokenId;
     address public signer;
 
@@ -67,15 +67,14 @@ contract JubjubPoap is ERC721, Ownable {
 
     function mint(address to, uint256 nullifierHash, uint256[8] calldata proof) external {
         if (nullifierUsed[nullifierHash]) revert NullifierAlreadyUsed();
-        uint nextTokenId_ =  nextTokenId;
+        uint256 nextTokenId_ = nextTokenId;
         address signer_ = signer;
         if (!_verify(to, nullifierHash, signer_, proof)) {
             revert VerificationFailed();
         }
         nullifierUsed[nullifierHash] = true;
         unchecked {
-
-        _mint(to, nextTokenId++);
+            _mint(to, nextTokenId++);
         }
         // Overflow of 96-bits leading to truncation infeasible.
         nextTokenId = uint96(nextTokenId_);
