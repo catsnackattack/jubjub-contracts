@@ -6,6 +6,7 @@ import {Ownable} from "solady/auth/Ownable.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {ISemaphore} from "semaphore/interfaces/ISemaphore.sol";
+import {IVerifier} from "./IVerifier.sol";
 
 contract JubjubPoap is ERC721 {
     using LibBitmap for LibBitmap.Bitmap;
@@ -31,6 +32,7 @@ contract JubjubPoap is ERC721 {
     address public groupId;
     /// @notice Sempahore singleton group manager contract to control access to this group
     ISemaphore public immutable semaphore;
+    IVerifier public immutable verifier;
 
     error AlreadyInitialized();
     error InvalidNameLength();
@@ -47,14 +49,18 @@ contract JubjubPoap is ERC721 {
     /**
      @notice -
      @param signer_ - the public key of the card managing this group
-     @param groupID_ - semaphore group id for ACL and nullifiers
+     @param groupId_ - semaphore group id for ACL and nullifiers
      @param name_ - NFT token name
      @param symbol_ - NFT token symbol
      @param tokenURI_ - default NFT art to display
     */
-    function intialize(address signer_, uint256 groupId_, string calldata name_, string calldata symbol_, string calldata tokenURI_)
-        external
-    {
+    function intialize(
+        address signer_,
+        uint256 groupId,
+        string calldata name_,
+        string calldata symbol_,
+        string calldata tokenURI_
+    ) external {
         if (bytes(_name).length == 0) revert AlreadyInitialized();
         if (bytes(name_).length == 0) revert InvalidNameLength();
         _name = name_;
@@ -95,22 +101,18 @@ contract JubjubPoap is ERC721 {
         editionURIs[currentEdition] = tokenURI_;
     }
 
-    function mint(bytes32 nullifierHash, address recipient, uint266 idCommitment, bytes memory signature, uint256[8] calldata proof) external {
-        // address signer_ = signer;
-        // if (!semaphore.verify(signer_, nullifierHash, proof)) revert VerificationFailed();
-
-        if (!semaphore.verifyProof(
-            groupId,
-            0, /* merkel tree root */
-            uint256(recipient), /* signal aka recipient address */
-            nullifierHash,
-            groupId, /* external nullifier */
-            proof
-        )) revert VerificationFailed();
+    function mint(address to, uint256 nullifierHash, uint256[8] calldata proof) external {
+        if (nullifierUsed[nullifierHash]) revert NullifierAlreadyUsed();
+        uint256 nextTokenId_ = nextTokenId;
+        address signer_ = signer;
+        if (!_verify(to, nullifierHash, signer_, proof)) {
+            revert VerificationFailed();
+        }
+        nullifierUsed[nullifierHash] = true;
 
 
         try(semaphore.addMember(groupId_, idCommitment)) {
-            _mint(recipient, nextTokenId);
+            _mint(to, nextTokenId);
             edition[nextTokenId] = currentEdition;
             // TODO get signature nonce from proof
             // nonce[nextTokenId] = signatureNonce;
@@ -121,7 +123,40 @@ contract JubjubPoap is ERC721 {
         } catch(bytes memory) {
             revert AddMemberFailed();
         }
+        // Overflow of 96-bits leading to truncation infeasible.
+        nextTokenId = uint96(nextTokenId_);
     }
+
+    function _verify(address recipient, uint256 nullifierHash, address signer_, uint256[8] calldata proof)
+        internal
+        view
+        returns (bool)
+    {
+        uint256 merkleTreeRoot = 0;
+        assert(merkleTreeRoot != 0); // TODO: Make `merkleTreeRoot` = group([nullifierHash])
+        /// @dev Uses signer pubkey hash (address) as group ID == external nullifier.
+        uint256 externalNullifier = uint256(uint160(signer_));
+        // Signal is solely the recipient to make sure no one else can frontrun
+        uint256 signal = uint256(uint160(recipient));
+
+        try verifier.verifyProof(merkleTreeRoot, nullifierHash, signal, externalNullifier, proof, 1) {
+            return true;
+        } catch {
+            return false;
+        }
+
+        // with semaphore groups
+        // if (!semaphore.verifyProof(
+        //     groupId,
+        //     0, /* merkel tree root */
+        //     uint256(recipient), /* signal aka recipient address */
+        //     nullifierHash,
+        //     groupId, /* external nullifier */
+        //     proof
+        // )) revert VerificationFailed();
+    }
+
+
 
     /**
      * functions to delegate more functionality to Semaphore instead of contract specific ACL
@@ -134,6 +169,4 @@ contract JubjubPoap is ERC721 {
     // function _checkOwner() internal view override virtual returns(bool) {
     //     return semaphore.groups(groupId).admin == msg.sender;
     // }
-
-
 }
